@@ -1,0 +1,22 @@
+---
+version: 0.2
+phases:
+  install:
+    commands:
+      - apt-get update && apt-get -y install python-pip && pip install --upgrade python && pip install --upgrade awscli
+  pre_build:
+      commands:
+      - TAG="$(date +%Y-%m-%d.%H.%M.%S).$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | head -c 8)"
+      - $(aws ecr get-login --no-include-email --registry-ids $BASE_ECR_IMAGE_ACCOUNT_ID)
+  build:
+    commands:
+      - docker build --build-arg ACCOUNT_ID=$BASE_ECR_IMAGE_ACCOUNT_ID --tag $REPOSITORY_URI:$TAG .
+  post_build:
+    commands:
+      - $(aws ecr get-login --no-include-email)
+      - docker push $REPOSITORY_URI:$TAG
+      - printf '[{"name":"${ImageName}","imageUri":"%s"}]' $REPOSITORY_URI:$TAG > images.json
+      - zip -r images.zip images.json
+      - aws s3api put-object --bucket $DEPLOYMENT_BUCKET_NAME --key images.zip --body images.zip --acl bucket-owner-full-control
+artifacts:
+  files: images.json
